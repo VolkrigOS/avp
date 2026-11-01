@@ -156,10 +156,89 @@ int create_tar(const char *outname, const char *dirname)
 	return 0;
 }
 
+int extract_tar(const char *filename, const char *dest)
+{
+	struct archive *a, *ext;
+	struct archive_entry *entry;
+	int flags, r;
+
+	flags = ARCHIVE_EXTRACT_TIME;
+	flags |= ARCHIVE_EXTRACT_PERM;
+	flags |= ARCHIVE_EXTRACT_ACL;
+	flags |= ARCHIVE_EXTRACT_FFLAGS;
+
+	a = archive_read_new();
+	archive_read_support_format_all(a);
+	archive_read_support_filter_all(a);
+
+	ext = archive_write_disk_new();
+	archive_write_disk_set_options(ext, flags);
+	archive_write_disk_set_standard_lookup(ext);
+
+	if (archive_read_open_filename(a, filename, 10240) != ARCHIVE_OK)
+	{
+		printf("avp: error in open %s", archive_error_string(a));
+		archive_read_free(a);
+		return 0;
+	}
+
+	while (1)
+	{
+		r = archive_read_next_header(a, &entry);
+		if (r == ARCHIVE_EOF) break;
+		if (r < ARCHIVE_OK)
+		{
+			printf("%s\n", archive_error_string(a));
+		}
+		if (r < ARCHIVE_WARN) break;
+
+		if (dest != NULL)
+		{
+			const char *current = archive_entry_pathname(entry);
+			char fpath[1024];
+			snprintf(fpath, sizeof(fpath), "%s/%s", dest, current);
+			archive_entry_set_pathname(entry, fpath);
+		}
+
+		r = archive_write_header(ext, entry);
+
+		if (r < ARCHIVE_OK) printf("avp: tar:  error in header %s", archive_error_string(ext));
+		if (archive_entry_size(entry) > 0)
+		{
+			const void *buff;
+			size_t size;
+			la_int64_t offset;
+
+			while (1)
+			{
+				r = archive_read_data_block(a, &buff, &size, &offset);
+				if (r == ARCHIVE_EOF) break;
+				if (r < ARCHIVE_OK)
+				{
+					printf("avp: tar: error on read %s", archive_error_string(ext));
+					break;
+				}
+				r = archive_write_data_block(ext, buff, size, offset);
+				if (r < ARCHIVE_OK)
+				{
+					printf("avp: tar: error on write %s", archive_error_string(ext));
+				}
+			}
+		}
+		archive_write_finish_entry(ext);
+	}
+	archive_read_close(a);
+	archive_read_free(a);
+	archive_write_close(ext);
+	archive_read_free(ext);
+	return 1;
+}
+
 void usage(void)
 {
 	puts("avp [COMMAND] [ARGS...]");
 	puts("	-b [FOLDER]	Build to a package");
+	puts("	-e [FILE]	Extract a package");
 }
 
 int build_pkg(const char *foldername)
@@ -184,6 +263,7 @@ int main(int argc, const char *argv[])
 	const char *command = argv[1];
 
 	if (argc >= 3 && strcmp(command, "-b") == 0) return build_pkg(argv[2]);
+	if (argc >= 3 && strcmp(command, "-e") == 0) return extract_tar(argv[2], ".");
 	usage();
 	return 0;
 }
