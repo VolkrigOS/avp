@@ -652,6 +652,11 @@ int main(int argc, const char *argv[])
         usage();
         return 1;
     }
+    
+    if (geteuid() != 0) {
+        puts("avp: are you root?");
+        return 1;
+    }
 
     const char *command = argv[1];
 
