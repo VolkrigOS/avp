@@ -638,12 +638,54 @@ int sync_repo(void)
     return failed;
 }
 
+int add_repository(const char *repository, const char *name)
+{
+    FILE *file = fopen(REPO_FILE, "a");
+    if (!file) return 1;
+    fprintf(file, "%s %s", name, repository);
+    fclose(file);
+    return 0;
+}
+
+int remove_repository(const char *name)
+{
+    FILE *file = fopen(REPO_FILE, "r");
+    if (!file) return 1;
+
+    FILE *tmp = fopen(REPO_FILE ".tmp", "w");
+    if (!tmp) {
+        fclose(file);
+        return 1;
+    }
+    char line[1024];
+    char repo_name[256];
+
+    while (fgets(line, sizeof(line), file)) {
+        if (sscanf(line, "%255s", repo_name) != 1)
+            continue;
+
+        if (strcmp(repo_name, name) != 0)
+            fputs(line, tmp);
+    }
+
+    fclose(file);
+    fclose(tmp);
+
+    if (rename(REPO_FILE ".tmp", REPO_FILE) != 0)
+        return 1;
+
+    return 0;
+}
+
 void usage(void)
 {
     puts("avp [COMMAND] [ARGS...]");
-    puts("    -b [FOLDER]    Build a package");
-    puts("    -e [FILE]      Extract a package");
-    puts("    -sync          Sync all repositories");
+    puts("    -b [FOLDER]   Build a package");
+    puts("    -e [FILE]     Extract a package");
+    puts("    -S        Sync all repositories");
+    puts("");
+    puts("    --add-repo [NAME] [LINK]     Add a repository in avp");
+    puts("    --del-repo [NAME]            Remove a repository in avp");
 }
 
 int main(int argc, const char *argv[])
@@ -652,24 +694,27 @@ int main(int argc, const char *argv[])
         usage();
         return 1;
     }
-    
     if (geteuid() != 0) {
         puts("avp: are you root?");
         return 1;
     }
 
     const char *command = argv[1];
-
     if (argc >= 3 && strcmp(command, "-b") == 0)
         return build_pkg(argv[2]);
 
     if (argc >= 3 && strcmp(command, "-e") == 0)
         return extract_tar(argv[2], ".");
 
-    if (strcmp(command, "-sync") == 0)
+    if (argc >= 4 && strcmp(command, "--add-repo") == 0)
+        return add_repository(argv[3], argv[2]);
+
+    if (argc >= 3 && strcmp(command, "--del-repo") == 0)
+        return remove_repository(argv[2]);
+
+    if (strcmp(command, "-S") == 0)
         return sync_repo();
-
+    
     usage();
-
     return 1;
 }
